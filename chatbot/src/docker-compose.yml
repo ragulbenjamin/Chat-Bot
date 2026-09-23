@@ -1,0 +1,18 @@
+name: chatbot
+
+services:
+  app:
+    build: .
+    container_name: chatbot
+    env_file: .env
+    environment:
+      # Keep the SQLite file in a volume so data survives container rebuilds
+      DATABASE_URL: sqlite:////code/data/chatbot.db
+    ports:
+      - "8010:8000"   # host 8000 is used by another app
+    volumes:
+      - chatbot-data:/code/data
+    restart: unless-stopped
+
+volumes:
+  chatbot-data:
