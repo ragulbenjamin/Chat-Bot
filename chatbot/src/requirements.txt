@@ -46,3 +46,4 @@ sqladmin==0.32.0
 SQLAlchemy==2.0.54
 itsdangerous==2.2.0
 WTForms==3.2.2
+PyJWT==2.14.0

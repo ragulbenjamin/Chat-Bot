@@ -2,6 +2,7 @@ from fastapi import FastAPI
 
 import models  # noqa: F401 - registers models on Base.metadata
 from admin import setup_admin
+from api_auth import router as auth_router
 from auth import create_user, get_user_by_email
 from config import settings
 from database import Base, SessionLocal, engine
@@ -26,6 +27,7 @@ create_initial_superuser()
 
 app = FastAPI(title="Chatbot")
 setup_admin(app, engine)
+app.include_router(auth_router)
 
 
 @app.get("/")

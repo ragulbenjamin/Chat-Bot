@@ -1,4 +1,3 @@
-import hashlib
 import hmac
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,7 +16,7 @@ from auth import get_user_by_email, get_user_grants, sync_permissions
 from config import settings
 from database import SessionLocal
 from models import Conversation, Group, Message, Permission, User
-from security import DUMMY_HASH, hash_password, verify_password
+from security import DUMMY_HASH, hash_password, password_fingerprint, verify_password
 
 SECRET_KEY = settings.secret_key.get_secret_value()
 TEMPLATES_DIR = Path(__file__).parent / "templates"
@@ -33,7 +32,7 @@ def current_user(request: Request) -> User | None:
 
 def _session_hash(user: User) -> str:
     # Changes whenever the password does, which logs out every existing session
-    return hmac.new(SECRET_KEY.encode(), (user.hashed_password or "").encode(), hashlib.sha256).hexdigest()
+    return password_fingerprint(user.hashed_password)
 
 
 def _check_credentials(email: str, password: str) -> tuple[int, str] | None:
@@ -65,7 +64,8 @@ def _load_user(user_id: int) -> User | None:
 class AdminAuth(AuthenticationBackend):
     async def login(self, request: Request) -> bool:
         form = await request.form()
-        email = str(form.get("email", "")).strip().lower()
+        # "username" is the field name on sqladmin's built-in login page
+        email = str(form.get("email") or form.get("username") or "").strip().lower()
         password = str(form.get("password", ""))
         result = await run_in_threadpool(_check_credentials, email, password)
         if result is None:
