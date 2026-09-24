@@ -10,8 +10,9 @@ class Settings(BaseSettings):
     # Required - the app will not start unless this is set in .env or the environment
     secret_key: SecretStr
 
-    # Lifetime of the JWTs issued by POST /auth/token
+    # Lifetime of the JWTs issued by POST /auth/token and POST /auth/refresh
     access_token_expire_minutes: int = 60
+    refresh_token_expire_days: int = 7
 
     # Optional - if both are set, a superuser with these details is created on startup
     # when no user with that email exists yet. Otherwise use: python manage.py createsuperuser

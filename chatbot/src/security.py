@@ -49,22 +49,40 @@ def password_fingerprint(hashed_password: str | None) -> str:
     return hmac.new(SECRET_KEY.encode(), (hashed_password or "").encode(), hashlib.sha256).hexdigest()
 
 
-def create_access_token(user_id: int, hashed_password: str | None) -> str:
+ACCESS = "access"
+REFRESH = "refresh"
+
+
+def _create_token(user_id: int, hashed_password: str | None, token_type: str, lifetime: timedelta) -> str:
     now = datetime.now(timezone.utc)
     claims = {
         "sub": str(user_id),
+        "type": token_type,
         "pwd": password_fingerprint(hashed_password)[:16],
         "iat": now,
-        "exp": now + timedelta(minutes=settings.access_token_expire_minutes),
+        "exp": now + lifetime,
     }
     return jwt.encode(claims, SECRET_KEY, algorithm=JWT_ALGORITHM)
 
 
-def decode_access_token(token: str) -> dict | None:
-    """The token's claims, or None if it is malformed, tampered with or expired."""
+def create_access_token(user_id: int, hashed_password: str | None) -> str:
+    return _create_token(
+        user_id, hashed_password, ACCESS, timedelta(minutes=settings.access_token_expire_minutes)
+    )
+
+
+def create_refresh_token(user_id: int, hashed_password: str | None) -> str:
+    return _create_token(
+        user_id, hashed_password, REFRESH, timedelta(days=settings.refresh_token_expire_days)
+    )
+
+
+def decode_token(token: str, token_type: str) -> dict | None:
+    """The token's claims, or None if it is malformed, tampered with, expired or of another type."""
     try:
-        return jwt.decode(
-            token, SECRET_KEY, algorithms=[JWT_ALGORITHM], options={"require": ["sub", "pwd", "exp"]}
+        claims = jwt.decode(
+            token, SECRET_KEY, algorithms=[JWT_ALGORITHM], options={"require": ["sub", "type", "pwd", "exp"]}
         )
     except jwt.InvalidTokenError:
         return None
+    return claims if claims["type"] == token_type else None

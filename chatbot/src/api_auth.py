@@ -1,7 +1,8 @@
 """JWT authentication for the API.
 
     POST /auth/register   create an account (JSON: email, password, username?)
-    POST /auth/token      log in (form: username=<email>, password) -> bearer token
+    POST /auth/token      log in (form: username=<email>, password) -> access + refresh token
+    POST /auth/refresh    swap a refresh token (JSON: refresh_token) for a new access + refresh token
     GET  /auth/me         the logged-in user
 
 Protect any route with:  user: User = Depends(get_current_user)
@@ -20,7 +21,16 @@ from admin import MIN_PASSWORD_LENGTH
 from auth import create_user, get_user_by_email
 from database import get_db
 from models import User
-from security import DUMMY_HASH, create_access_token, decode_access_token, password_fingerprint, verify_password
+from security import (
+    ACCESS,
+    DUMMY_HASH,
+    REFRESH,
+    create_access_token,
+    create_refresh_token,
+    decode_token,
+    password_fingerprint,
+    verify_password,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/token")
@@ -46,16 +56,28 @@ class UserOut(BaseModel):
 
 class Token(BaseModel):
     access_token: str
+    refresh_token: str
     token_type: str = "bearer"
 
 
-def get_current_user(token: Annotated[str, Depends(oauth2_scheme)], db: DbSession) -> User:
+class RefreshIn(BaseModel):
+    refresh_token: str
+
+
+def _issue_tokens(user: User) -> Token:
+    return Token(
+        access_token=create_access_token(user.id, user.hashed_password),
+        refresh_token=create_refresh_token(user.id, user.hashed_password),
+    )
+
+
+def _user_from_token(token: str, token_type: str, db: Session) -> User:
     unauthorized = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    claims = decode_access_token(token)
+    claims = decode_token(token, token_type)
     if claims is None or not str(claims["sub"]).isdigit():
         raise unauthorized
     user = db.get(User, int(claims["sub"]))
@@ -66,6 +88,10 @@ def get_current_user(token: Annotated[str, Depends(oauth2_scheme)], db: DbSessio
     ):
         raise unauthorized
     return user
+
+
+def get_current_user(token: Annotated[str, Depends(oauth2_scheme)], db: DbSession) -> User:
+    return _user_from_token(token, ACCESS, db)
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
@@ -92,7 +118,12 @@ def login(form: Annotated[OAuth2PasswordRequestForm, Depends()], db: DbSession):
         )
     user.last_login = datetime.now(timezone.utc)
     db.commit()
-    return Token(access_token=create_access_token(user.id, user.hashed_password))
+    return _issue_tokens(user)
+
+
+@router.post("/refresh", response_model=Token)
+def refresh(data: RefreshIn, db: DbSession):
+    return _issue_tokens(_user_from_token(data.refresh_token, REFRESH, db))
 
 
 @router.get("/me", response_model=UserOut)
